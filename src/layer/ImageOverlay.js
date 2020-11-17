@@ -3,6 +3,7 @@ import * as Util from '../core/Util';
 import {toLatLngBounds} from '../geo/LatLngBounds';
 import {Bounds} from '../geometry/Bounds';
 import * as DomUtil from '../dom/DomUtil';
+import {toLatLng as latLng} from '../geo/LatLng';
 
 /*
  * @class ImageOverlay
@@ -224,8 +225,52 @@ export var ImageOverlay = Layer.extend({
 		var image = this._image,
 		    bounds = new Bounds(
 		        this._map.latLngToLayerPoint(this._bounds.getNorthWest()),
-		        this._map.latLngToLayerPoint(this._bounds.getSouthEast())),
-		    size = bounds.getSize();
+		        this._map.latLngToLayerPoint(this._bounds.getSouthEast()));
+
+		// W pierwszym kroku wyznaczamy odległości kątowe równe 1/3 odległości kątowych pomiędzy granicami obszaru widocznego
+		// var refOneThirdLat = (this._map.getBounds().getNorth() - this._map.getBounds().getSouth()) / 3;   // w PL ma mieć wartość dodatnią
+		// var refOneThirdLng = (this._map.getBounds().getEast() - this._map.getBounds().getWest()) / 3;     // w PL ma mieć wartość dodatnią
+
+		// Wyznaczamy współrzędne punktów (a właściwie granic) referencyjnych leżących w 1/3 i 2/3 obszaru widocznego
+		// var refNorth = this._map.getBounds().getNorth() - refOneThirdLat;
+		// var refSouth = this._map.getBounds().getSouth() + refOneThirdLat;
+		// var refEast  = this._map.getBounds().getEast()  - refOneThirdLng;
+		// var refWest = this._map.getBounds().getWest()  + refOneThirdLng;
+
+		var refNorth = this._map.getBounds().getNorth();
+		var refSouth = this._map.getBounds().getSouth();
+		var refEast  = this._map.getBounds().getEast();
+		var refWest = this._map.getBounds().getWest();
+
+		// Wyznaczamy współrzędne pikselowe narożników obszaru utworzonego przez punkty referencyjne
+		var refTopLeft =  this._map.latLngToLayerPoint(latLng(refNorth, refWest));
+		var refBottomRight =  this._map.latLngToLayerPoint(latLng(refSouth, refEast));
+
+		// Wyznaczamy granice pikselowe bitmapy (a z tego bezpośrednio współrzędne narożników) na podstawie wyliczonych powyżej punktów referencyjnych.
+		// W pierwszym kroku wyznaczamy zmienne pomocnicze:
+		var bmpNorth = this._bounds.getNorth();
+		var bmpSouth = this._bounds.getSouth();
+		var bmpEast = this._bounds.getEast();
+		var bmpWest = this._bounds.getWest();
+
+		// Obliczenia na podstawie proporcji wyznaczonej na kartce (załącznik): (Pana wersja)
+		// var bmpTop = (refTop * (bmpNorth - refSouth) + refBottom * (refNorth - bmpNorth) ) / (refNorth - refSouth);
+		// var bmpRight = (refRight * (bmpEast - refWest) + refLeft * (refEast - bmpEast) ) / (refEast - refWest);
+
+		// Korekcja wprowadzana kiedy widok nie obejmuje calego pokrycia
+		if (refNorth < bmpNorth && refSouth > bmpSouth) {
+			var bmpTop = ((bmpNorth - refSouth) * (refTopLeft.y - refBottomRight.y)) / (refNorth - refSouth) + refBottomRight.y;
+			var bmpRight = ((bmpEast - refWest) * (refBottomRight.x - refTopLeft.x)) / (refEast - refWest) + refTopLeft.x;
+			var bmpLeft = ((bmpWest - refEast) * (refTopLeft.x - refBottomRight.x)) / (refWest - refEast) + refBottomRight.x;
+			var bmpBottom = ((bmpSouth - refNorth) * (refBottomRight.y - refTopLeft.y)) / (refSouth - refNorth) + refTopLeft.y;
+
+			// Tworzymy obiekt bounds jak w oryginale, ale na podstawie wyliczonych powyżej punktów
+			// var bounds = new Bounds( L.point(bmpLeft, bmpTop), L.point(bmpRight, bmpBottom) ); biorac do proporcji refTop/refBottom
+			// wynik wraca nam już jako punkt, nie ma potrzeby tworzenia punktu kolejny raz
+			bounds = new Bounds([bmpLeft, bmpTop], [bmpRight, bmpBottom]);
+		}
+
+		var size = bounds.getSize();
 
 		DomUtil.setPosition(image, bounds.min);
 
